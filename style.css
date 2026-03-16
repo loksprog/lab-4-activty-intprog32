@@ -1,0 +1,38 @@
+:root {
+  --warning: #ffd000;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: roboto;
+}
+
+.bi-exclamation-triangle-fill {
+  color: var(--warning);
+}
+
+body.not-authenticated .role-logged-in {
+  display: none;
+}
+
+body.authenticated .role-logged-out {
+  display: none;
+}
+
+.role-admin {
+  display: none;
+}
+
+body.is-admin .role-admin {
+  display: block;
+}
+
+.page.active {
+  display: block;
+}
+
+.page {
+  display: none;
+}
