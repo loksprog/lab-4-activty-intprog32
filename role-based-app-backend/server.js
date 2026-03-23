@@ -12,7 +12,7 @@ app.use(cors({
     origin: ['http://127.0.0.1:5500/', 'http://localhost:5500']
 }));
 
-// Middle to parse JSON
+// Middlware to parse JSON
 app.use(express.json());
 
 // In-memory database
@@ -20,11 +20,12 @@ let db = {
   accounts: [
     {
       id: 1,
-      firstName: 'Admin', lastName: 'User',
+      firstName: 'Admin',
+      lastName: 'User',
       email: 'admin@example.com',
       password: bcrypt.hashSync('Password123!', 10),
       role: 'admin',
-      verified: true,     
+      verified: true,
     },
   ],
   departments: [
@@ -34,3 +35,33 @@ let db = {
   employees: [],
   requests: [],
 };
+
+// ===========
+// Middleware
+// ===========
+
+// Token authentication
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+ 
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+ 
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+    req.user = user;
+    next();
+  });
+}
+ 
+// Role authorization
+function authorizeRole(role) {
+  return (req, res, next) => {
+    if (req.user.role !== role) {
+      return res.status(403).json({ error: 'Access denied: insufficient permissions' });
+    }
+    next();
+  };
+}
