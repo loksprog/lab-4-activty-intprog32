@@ -1,132 +1,94 @@
+const API = 'http://localhost:3000';
 let currentUser = null;
 
-window.db = {
-  accounts: [],
-};
+// ======================
+// Helpers
+// ======================
 
 function navigateTo(hash) {
   window.location.hash = hash;
 }
 
-// Get started button
-document.getElementById("getStartedBtn").addEventListener("click", () => {
-  navigateTo("#/login");
-});
-
-// Handles Routing
-function handleRouting() {
-  // Reads the current hush
-  let hash = window.location.hash;
-
-  // Set hash to "#/" if empty
-  if (!hash) {
-    hash = "#/";
-  }
-
-  // Extract page name
-  let pageName = hash.replace("#/", "");
-
-  // Set home as the default page
-  if (pageName === "") {
-    pageName = "home";
-  }
-
-  // Protected routes
-  const protectedRoutes = ["profile", "requests"];
-  const adminRoutes = ["employees", "department", "accounts"];
-
-  // Redirects unauthenticated users away from protected routes
-  if (protectedRoutes.includes(pageName) && !currentUser) {
-    navigateTo("#/login");
-    return;
-  }
-
-  // Blocks non-admins
-  if (
-    adminRoutes.includes(pageName) &&
-    (!currentUser || currentUser.role !== "admin")
-  ) {
-    navigateTo("#/");
-    return;
-  }
-
-  // Hides all `.page` elements
-  document.querySelectorAll(".page").forEach((page) => {
-    page.classList.remove("active");
-  });
-
-  // Shows the matching page
-  const activePage = document.getElementById(pageName + "Page");
-  if (activePage) {
-    activePage.classList.add("active");
-  }
-
-  // Verify Page
-  if (pageName === "verify") {
-    const email = localStorage.getItem("unverified_email");
-
-    if (!email) {
-      navigateTo("#/");
-      return;
-    }
-
-    const showMessage = document.getElementById("verify-message");
-    showMessage.textContent = "Verification sent to " + email + ".";
-  }
-
-  // Login Page
-  if (pageName === "login") {
-    const justVerified = localStorage.getItem("just_verified");
-
-    if (justVerified === "true") {
-      const alertBox = document.getElementById("verified-alert");
-      alertBox.classList.remove("d-none");
-
-      localStorage.removeItem("just_verified");
-    }
-  }
-
-  // Profile Page
-  if (pageName === "profile") {
-    renderProfile();
-  }
-
-  // Accounts Page
-  if (pageName === "accounts") {
-    renderAccountsList();
-  }
-
-  // Departments Page
-  if (pageName === "department") {
-    renderDepartmentsList();
-  }
-
-  // Employees Page
-  if (pageName === "employees") {
-    renderEmployeesTable();
-  }
-
-  // Requests Page
-  if (pageName === "requests") {
-    renderRequestsTable();
-  }
+function getAuthHeader() {
+  const token = sessionStorage.getItem('authToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Call handleRouting
-window.addEventListener("hashchange", handleRouting);
-window.addEventListener("load", () => {
-  const authToken = localStorage.getItem("auth_token");
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader(),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+}
 
-  if (authToken) {
-    // Find user with this email
-    const user = window.db.accounts.find((acc) => {
-      return acc.email === authToken;
-    });
+// ======================
+// Routing
+// ======================
 
-    if (user && user.verified) {
-      setAuthState(true, user);
+document.getElementById('getStartedBtn').addEventListener('click', () => {
+  navigateTo('#/login');
+});
+
+function handleRouting() {
+  let hash = window.location.hash || '#/';
+  let pageName = hash.replace('#/', '') || 'home';
+
+  const protectedRoutes = ['profile', 'requests'];
+  const adminRoutes = ['employees', 'department', 'accounts'];
+
+  if (protectedRoutes.includes(pageName) && !currentUser) {
+    navigateTo('#/login');
+    return;
+  }
+
+  if (adminRoutes.includes(pageName) && (!currentUser || currentUser.role !== 'admin')) {
+    navigateTo('#/');
+    return;
+  }
+
+  document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+
+  const activePage = document.getElementById(pageName + 'Page');
+  if (activePage) activePage.classList.add('active');
+
+  if (pageName === 'verify') {
+    const email = sessionStorage.getItem('unverified_email');
+    if (!email) { navigateTo('#/'); return; }
+    document.getElementById('verify-message').textContent = 'Verification sent to ' + email + '.';
+  }
+
+  if (pageName === 'login') {
+    const justVerified = sessionStorage.getItem('just_verified');
+    if (justVerified === 'true') {
+      document.getElementById('verified-alert').classList.remove('d-none');
+      sessionStorage.removeItem('just_verified');
+    }
+  }
+
+  if (pageName === 'profile') renderProfile();
+  if (pageName === 'accounts') renderAccountsList();
+  if (pageName === 'department') renderDepartmentsList();
+  if (pageName === 'employees') renderEmployeesTable();
+  if (pageName === 'requests') renderRequestsTable();
+}
+
+window.addEventListener('hashchange', handleRouting);
+
+window.addEventListener('load', async () => {
+  const token = sessionStorage.getItem('authToken');
+
+  if (token) {
+    const { ok, data } = await apiFetch('/api/profile');
+    if (ok) {
+      setAuthState(true, data);
     } else {
-      localStorage.removeItem("auth_token");
+      sessionStorage.removeItem('authToken');
       setAuthState(false);
     }
   } else {
@@ -141,927 +103,652 @@ window.addEventListener("load", () => {
 // ======================
 
 // Registration
-const registerForm = document.getElementById("register-form");
-
-registerForm.addEventListener("submit", (event) => {
+document.getElementById('register-form').addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  // Retrieve Inputs
-  const reg_firstName = document.getElementById("reg-firstName").value.trim();
-  const reg_lastName = document.getElementById("reg-lastName").value.trim();
-  const reg_email = document.getElementById("reg-email").value.trim();
-  const reg_password = document.getElementById("reg-password").value.trim();
+  const firstName = document.getElementById('reg-firstName').value.trim();
+  const lastName = document.getElementById('reg-lastName').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value.trim();
 
-  // Password validation
-  if (reg_password.length < 6) {
-    showToast("Password must be at least 6 characters", "error");
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
     return;
   }
 
-  // Check if the Email already exists
-  const isEmailExists = window.db.accounts.find((account) => {
-    return account.email === reg_email;
+  const { ok, data } = await apiFetch('/api/register', {
+    method: 'POST',
+    body: JSON.stringify({ firstName, lastName, email, password }),
   });
 
-  if (isEmailExists) {
-    showToast("Email already exists!", "error");
+  if (!ok) {
+    showToast(data.error || 'Registration failed', 'error');
     return;
   }
 
-  const newAccount = {
-    firstName: reg_firstName,
-    lastName: reg_lastName,
-    email: reg_email,
-    password: reg_password,
-    role: "employee",
-    verified: false,
-  };
+  // Store the verification token and email so the verify page can use them
+  sessionStorage.setItem('unverified_email', email);
+  sessionStorage.setItem('verification_token', data.verificationToken);
 
-  window.db.accounts.push(newAccount);
-  saveToStorage();
-
-  // Store email in `localStorage.unverified_email` (after registration)
-  localStorage.setItem("unverified_email", reg_email);
-
-  // Navigate to `#/verify-email`
-  navigateTo("#/verify");
+  navigateTo('#/verify');
 });
 
 // Email Verification (Simulated)
-const simulateBtn = document.getElementById("simulateBtn");
+document.getElementById('simulateBtn').addEventListener('click', async () => {
+  const token = sessionStorage.getItem('verification_token');
 
-simulateBtn.addEventListener("click", () => {
-  // Get stored Email
-  const storedEmail = localStorage.getItem("unverified_email");
-
-  if (!storedEmail) {
-    showToast("No email to verify!", "error");
-  }
-
-  const account = window.db.accounts.find((acc) => {
-    return acc.email === storedEmail;
-  });
-
-  if (!account) {
-    showToast("Account not found!", "error");
+  if (!token) {
+    showToast('No verification token found!', 'error');
     return;
   }
 
-  // Mark Email as verified
-  account.verified = true;
-  saveToStorage();
+  const { ok, data } = await apiFetch('/api/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 
-  // Flag
-  localStorage.setItem("just_verified", "true");
+  if (!ok) {
+    showToast(data.error || 'Verification failed', 'error');
+    return;
+  }
 
-  // remove email from LS
-  localStorage.removeItem("unverified_email");
+  sessionStorage.setItem('just_verified', 'true');
+  sessionStorage.removeItem('unverified_email');
+  sessionStorage.removeItem('verification_token');
 
-  // Redirect to login
-  navigateTo("#/login");
+  navigateTo('#/login');
 });
 
 // Login
-const loginForm = document.getElementById("login-form");
-loginForm.addEventListener("submit", (event) => {
+document.getElementById('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const loginEmail = document.getElementById("login-email").value.trim();
-  const loginPassword = document.getElementById("login-password").value.trim();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value.trim();
 
-  const account = window.db.accounts.find((acc) => {
-    return (
-      acc.email === loginEmail &&
-      acc.password === loginPassword &&
-      acc.verified === true
-    );
+  const { ok, data } = await apiFetch('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
   });
 
-  // Check if account exists
-  if (!account) {
-    showToast("Invalid credentials or account not verified.", "error");
+  if (!ok) {
+    showToast(data.error || 'Login failed', 'error');
     return;
   }
 
-  // Save auth token to localStorage
-  localStorage.setItem("auth_token", loginEmail);
+  sessionStorage.setItem('authToken', data.token);
+  setAuthState(true, data.user);
+  navigateTo('#/profile');
+});
 
-  // Set authentication state
-  setAuthState(true, account);
-
-  // Redirect to profile page
-  navigateTo("#/profile");
+// Logout
+document.getElementById('logout-btn').addEventListener('click', () => {
+  sessionStorage.removeItem('authToken');
+  setAuthState(false);
+  navigateTo('#/');
 });
 
 // Auth State Management
 function setAuthState(isAuth, user) {
   if (isAuth) {
     currentUser = user;
+    document.body.classList.remove('not-authenticated');
+    document.body.classList.add('authenticated');
 
-    // Update body classes
-    document.body.classList.remove("not-authenticated");
-    document.body.classList.add("authenticated");
-
-    // Check if admin
-    if (user && user.role === "admin") {
-      document.body.classList.add("is-admin");
+    if (user && user.role === 'admin') {
+      document.body.classList.add('is-admin');
     } else {
-      document.body.classList.remove("is-admin");
+      document.body.classList.remove('is-admin');
     }
 
-    const dropdownToggle = document.querySelector(".navbar .dropdown-toggle");
+    const dropdownToggle = document.querySelector('.navbar .dropdown-toggle');
     if (dropdownToggle) {
-      dropdownToggle.textContent = user.firstName + " " + user.lastName;
+      dropdownToggle.textContent = user.firstName + ' ' + user.lastName;
     }
   } else {
-    // user logged out
     currentUser = null;
-    document.body.classList.remove("authenticated", "is-admin");
-    document.body.classList.add("not-authenticated");
+    document.body.classList.remove('authenticated', 'is-admin');
+    document.body.classList.add('not-authenticated');
   }
 }
 
-// Logout
-document.getElementById("logout-btn").addEventListener("click", () => {
-  localStorage.removeItem("auth_token");
-  setAuthState(false);
-  navigateTo("#/");
-});
+// ======================
+// Cancel / Nav Buttons
+// ======================
 
-// ===================================
-// Data Persistence with localStorage
-// ===================================
-
-const STORAGE_KEY = "ipt_demo_v1";
-
-function loadFromStorage() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-
-  if (stored) {
-    try {
-      window.db = JSON.parse(stored);
-    } catch (error) {
-      console.error("Corrupt data, seeding defaults");
-      seedDefaultData();
-    }
-  } else {
-    seedDefaultData();
-  }
-}
-
-function seedDefaultData() {
-  window.db = {
-    accounts: [
-      {
-        firstName: "Admin",
-        lastName: "User",
-        email: "admin@example.com",
-        password: "Password123!",
-        role: "admin",
-        verified: true,
-      },
-    ],
-    departments: [
-      { id: 1, name: "Engineering", description: "Software development" },
-      { id: 2, name: "HR", description: "Human Resources" },
-    ],
-    employees: [],
-    requests: [],
-  };
-
-  saveToStorage();
-}
-
-function saveToStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(window.db));
-}
-
-loadFromStorage();
+document.getElementById('regCancelBtn').addEventListener('click', () => navigateTo('#/'));
+document.getElementById('loginCancelBtn').addEventListener('click', () => navigateTo('#/'));
+document.getElementById('goToLoginBtn').addEventListener('click', () => navigateTo('#/login'));
 
 // ============
 // Profile Page
 // ============
 
 function renderProfile() {
-  // Make sure user is logged in
-  if (!currentUser) {
-    navigateTo("#/login");
-    return;
-  }
+  if (!currentUser) { navigateTo('#/login'); return; }
 
-  // Get profile display elements
-  const profileName = document.getElementById("profile-name");
-  const profileEmail = document.getElementById("profile-email");
-  const profileRole = document.getElementById("profile-role");
-
-  // Display user information
-  profileName.textContent = currentUser.firstName + " " + currentUser.lastName;
-  profileEmail.textContent = currentUser.email;
-  profileRole.textContent = currentUser.role;
+  document.getElementById('profile-name').textContent = currentUser.firstName + ' ' + currentUser.lastName;
+  document.getElementById('profile-email').textContent = currentUser.email;
+  document.getElementById('profile-role').textContent = currentUser.role;
 }
 
-// Edit Profile button
-const editProfileBtn = document.getElementById("edit-profile-button");
+document.getElementById('edit-profile-button').addEventListener('click', () => {
+  document.getElementById('edit-firstName').value = currentUser.firstName;
+  document.getElementById('edit-lastName').value = currentUser.lastName;
 
-editProfileBtn.addEventListener("click", () => {
-  // Pre-fill form with current user data
-  document.getElementById("edit-firstName").value = currentUser.firstName;
-  document.getElementById("edit-lastName").value = currentUser.lastName;
-
-  // Show modal
-  const modal = new bootstrap.Modal(
-    document.getElementById("editProfileModal"),
-  );
+  const modal = new bootstrap.Modal(document.getElementById('editProfileModal'));
   modal.show();
 });
 
-// Edit Profile Form Submit
-document
-  .getElementById("edit-profile-form")
-  .addEventListener("submit", (event) => {
-    event.preventDefault();
+document.getElementById('edit-profile-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
 
-    // Get new values
-    const newFirstName = document.getElementById("edit-firstName").value.trim();
-    const newLastName = document.getElementById("edit-lastName").value.trim();
+  const firstName = document.getElementById('edit-firstName').value.trim();
+  const lastName = document.getElementById('edit-lastName').value.trim();
 
-    if (!newFirstName || !newLastName) {
-      showToast("Please fill in all fields!", "error");
-      return;
-    }
-
-    // Update currentUser
-    currentUser.firstName = newFirstName;
-    currentUser.lastName = newLastName;
-
-    // Find and update in database
-    const accountIndex = window.db.accounts.findIndex(
-      (acc) => acc.email === currentUser.email,
-    );
-    if (accountIndex !== -1) {
-      window.db.accounts[accountIndex].firstName = newFirstName;
-      window.db.accounts[accountIndex].lastName = newLastName;
-      saveToStorage();
-    }
-
-    renderProfile();
-
-    // Update dropdown username
-    const dropdownToggle = document.querySelector(".navbar .dropdown-toggle");
-    if (dropdownToggle) {
-      dropdownToggle.textContent = newFirstName + " " + newLastName;
-    }
-
-    const modal = bootstrap.Modal.getInstance(
-      document.getElementById("editProfileModal"),
-    );
-    modal.hide();
-
-    showToast("Profile updated successfully!", "success");
-  });
-
-// =====================
-// Admin Features (CRUD)
-// =====================
-
-// Accounts
-const addAccBtn = document.getElementById("addAccBtn");
-const accountFormCard = document.getElementById("account-form-card");
-const accCancelBtn = document.getElementById("accCancelBtn");
-const addAccForm = document.getElementById("addAcc-form");
-
-let editingAccountIndex = null;
-
-// Add Account button - show form
-addAccBtn.addEventListener("click", () => {
-  editingAccountIndex = null;
-  document.getElementById("account-form-title").textContent = "Add Account";
-  addAccForm.reset();
-  accountFormCard.classList.remove("d-none");
-});
-
-// Cancel button - hide form
-accCancelBtn.addEventListener("click", () => {
-  accountFormCard.classList.add("d-none");
-  addAccForm.reset();
-  editingAccountIndex = null;
-});
-
-// Render accounts table
-function renderAccountsList() {
-  const tableBody = document.getElementById("accounts-table-body");
-  tableBody.innerHTML = "";
-
-  if (window.db.accounts.length === 0) {
-    tableBody.innerHTML =
-      '<tr><td colspan="5" class="text-center">No accounts</td></tr>';
+  if (!firstName || !lastName) {
+    showToast('Please fill in all fields!', 'error');
     return;
   }
 
-  window.db.accounts.forEach((account, index) => {
-    const row = document.createElement("tr");
+  const { ok, data } = await apiFetch('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify({ firstName, lastName }),
+  });
 
+  if (!ok) {
+    showToast(data.error || 'Update failed', 'error');
+    return;
+  }
+
+  // Sync currentUser with the updated values from the server
+  currentUser.firstName = data.user.firstName;
+  currentUser.lastName = data.user.lastName;
+
+  renderProfile();
+
+  const dropdownToggle = document.querySelector('.navbar .dropdown-toggle');
+  if (dropdownToggle) {
+    dropdownToggle.textContent = data.user.firstName + ' ' + data.user.lastName;
+  }
+
+  bootstrap.Modal.getInstance(document.getElementById('editProfileModal')).hide();
+  showToast('Profile updated successfully!', 'success');
+});
+
+// =====================
+// Accounts (Admin)
+// =====================
+
+const accountFormCard = document.getElementById('account-form-card');
+const addAccForm = document.getElementById('addAcc-form');
+let editingAccountId = null;
+
+document.getElementById('addAccBtn').addEventListener('click', () => {
+  editingAccountId = null;
+  document.getElementById('account-form-title').textContent = 'Add Account';
+  addAccForm.reset();
+  accountFormCard.classList.remove('d-none');
+});
+
+document.getElementById('accCancelBtn').addEventListener('click', () => {
+  accountFormCard.classList.add('d-none');
+  addAccForm.reset();
+  editingAccountId = null;
+});
+
+async function renderAccountsList() {
+  const tableBody = document.getElementById('accounts-table-body');
+  const { ok, data } = await apiFetch('/api/accounts');
+
+  if (!ok) {
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load accounts</td></tr>';
+    return;
+  }
+
+  if (data.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No accounts</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = '';
+  data.forEach(account => {
+    const row = document.createElement('tr');
     row.innerHTML = `
       <td>${account.firstName} ${account.lastName}</td>
       <td>${account.email}</td>
       <td>${account.role}</td>
-      <td>${account.verified ? "✓" : "—"}</td>
+      <td>${account.verified ? '✓' : '—'}</td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="editAccount(${index})">Edit</button>
-        <button class="btn btn-sm btn-warning" onclick="resetPassword(${index})">Reset PW</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteAccount(${index})">Delete</button>
+        <button class="btn btn-sm btn-primary" onclick="editAccount(${account.id})">Edit</button>
+        <button class="btn btn-sm btn-warning" onclick="resetPassword(${account.id})">Reset PW</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAccount(${account.id})">Delete</button>
       </td>
     `;
-
     tableBody.appendChild(row);
   });
 }
 
-// Edit account function
-function editAccount(index) {
-  editingAccountIndex = index;
-  const account = window.db.accounts[index];
+async function editAccount(id) {
+  const { ok, data } = await apiFetch('/api/accounts');
+  if (!ok) return;
 
-  // Pre-fill form
-  document.getElementById("accFirstName").value = account.firstName;
-  document.getElementById("accLastName").value = account.lastName;
-  document.getElementById("accEmail").value = account.email;
-  document.getElementById("accPassword").value = account.password;
-  document.getElementById("accRole").value = account.role;
-  document.getElementById("verifiedCheck").checked = account.verified;
+  const account = data.find(a => a.id === id);
+  if (!account) return;
 
-  // Change title and show form
-  document.getElementById("account-form-title").textContent = "Edit Account";
-  accountFormCard.classList.remove("d-none");
+  editingAccountId = id;
+  document.getElementById('accFirstName').value = account.firstName;
+  document.getElementById('accLastName').value = account.lastName;
+  document.getElementById('accEmail').value = account.email;
+  document.getElementById('accPassword').value = '';
+  document.getElementById('accRole').value = account.role;
+  document.getElementById('verifiedCheck').checked = account.verified;
+
+  document.getElementById('account-form-title').textContent = 'Edit Account';
+  accountFormCard.classList.remove('d-none');
 }
 
-// Form submit - handles both add and edit
-addAccForm.addEventListener("submit", (event) => {
+addAccForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const accountData = {
-    firstName: document.getElementById("accFirstName").value.trim(),
-    lastName: document.getElementById("accLastName").value.trim(),
-    email: document.getElementById("accEmail").value.trim(),
-    password: document.getElementById("accPassword").value.trim(),
-    role: document.getElementById("accRole").value,
-    verified: document.getElementById("verifiedCheck").checked,
+    firstName: document.getElementById('accFirstName').value.trim(),
+    lastName: document.getElementById('accLastName').value.trim(),
+    email: document.getElementById('accEmail').value.trim(),
+    password: document.getElementById('accPassword').value.trim(),
+    role: document.getElementById('accRole').value,
+    verified: document.getElementById('verifiedCheck').checked,
   };
 
-  if (editingAccountIndex !== null) {
-    // Editing existing account
-    window.db.accounts[editingAccountIndex] = accountData;
-    showToast("Account updated successfully!", "success");
-  } else {
-    // Adding new account
-    const emailExists = window.db.accounts.find(
-      (acc) => acc.email === accountData.email,
-    );
-    if (emailExists) {
-      showToast("Email already exists!", "error");
-      return;
-    }
-    window.db.accounts.push(accountData);
-    showToast("Account added successfully!", "success");
+  const isEdit = editingAccountId !== null;
+  const { ok, data } = await apiFetch(
+    isEdit ? `/api/accounts/${editingAccountId}` : '/api/accounts',
+    { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(accountData) }
+  );
+
+  if (!ok) {
+    showToast(data.error || 'Operation failed', 'error');
+    return;
   }
 
-  saveToStorage();
-  renderAccountsList();
-
-  // Hide form and reset
-  accountFormCard.classList.add("d-none");
+  showToast(isEdit ? 'Account updated successfully!' : 'Account added successfully!', 'success');
+  accountFormCard.classList.add('d-none');
   addAccForm.reset();
-  editingAccountIndex = null;
-  document.getElementById("account-form-title").textContent = "Add Account";
+  editingAccountId = null;
+  document.getElementById('account-form-title').textContent = 'Add Account';
+  renderAccountsList();
 });
 
-// Reset password function
-function resetPassword(index) {
-  const account = window.db.accounts[index];
-  const newPassword = prompt("Enter new password (min 6 characters):");
-
-  if (!newPassword) {
-    return; // User cancelled
-  }
+async function resetPassword(id) {
+  const newPassword = prompt('Enter new password (min 6 characters):');
+  if (!newPassword) return;
 
   if (newPassword.length < 6) {
-    showToast("Password must be at least 6 characters!", "error");
+    showToast('Password must be at least 6 characters!', 'error');
     return;
   }
 
-  account.password = newPassword;
-  saveToStorage();
+  const { ok, data } = await apiFetch(`/api/accounts/${id}/reset-password`, {
+    method: 'PUT',
+    body: JSON.stringify({ newPassword }),
+  });
 
-  showToast("Password reset successfully!", "success");
+  showToast(ok ? 'Password reset successfully!' : (data.error || 'Reset failed'), ok ? 'success' : 'error');
 }
 
-// Delete account function
-function deleteAccount(index) {
-  const account = window.db.accounts[index];
+async function deleteAccount(id) {
+  const { ok: listOk, data: accounts } = await apiFetch('/api/accounts');
+  if (!listOk) return;
 
-  // Prevent self-deletion
-  if (currentUser && account.email === currentUser.email) {
-    showToast("You cannot delete your own account", "error");
-    return;
-  }
+  const account = accounts.find(a => a.id === id);
+  if (!account) return;
 
-  if (
-    confirm(
-      `Are you sure you want to delete ${account.firstName} ${account.lastName}?`,
-    )
-  ) {
-    window.db.accounts.splice(index, 1);
-    saveToStorage();
-    renderAccountsList();
-    showToast("Account deleted successfully!", "success");
-  }
+  if (!confirm(`Are you sure you want to delete ${account.firstName} ${account.lastName}?`)) return;
+
+  const { ok, data } = await apiFetch(`/api/accounts/${id}`, { method: 'DELETE' });
+  showToast(ok ? 'Account deleted successfully!' : (data.error || 'Delete failed'), ok ? 'success' : 'error');
+  if (ok) renderAccountsList();
 }
 
-// Departments
-let editingDepartmentIndex = null;
+// =====================
+// Departments (Admin)
+// =====================
 
-function renderDepartmentsList() {
-  const tableBody = document.getElementById("departments-table-body");
+let editingDepartmentId = null;
 
-  if (window.db.departments.length === 0) {
-    tableBody.innerHTML =
-      '<tr><td colspan="3" class="text-center">No departments</td></tr>';
+async function renderDepartmentsList() {
+  const tableBody = document.getElementById('departments-table-body');
+  const { ok, data } = await apiFetch('/api/departments');
+
+  if (!ok) {
+    tableBody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Failed to load departments</td></tr>';
     return;
   }
 
-  tableBody.innerHTML = "";
+  if (data.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="3" class="text-center">No departments</td></tr>';
+    return;
+  }
 
-  window.db.departments.forEach((dept, index) => {
-    const row = document.createElement("tr");
-
+  tableBody.innerHTML = '';
+  data.forEach(dept => {
+    const row = document.createElement('tr');
     row.innerHTML = `
       <td>${dept.name}</td>
       <td>${dept.description}</td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="editDepartment(${index})">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteDepartment(${index})">Delete</button>
+        <button class="btn btn-sm btn-primary" onclick="editDepartment(${dept.id})">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteDepartment(${dept.id})">Delete</button>
       </td>
     `;
-
     tableBody.appendChild(row);
   });
 }
 
-// Show Add Department Modal
-document.getElementById("add-department-btn").addEventListener("click", () => {
-  editingDepartmentIndex = null;
-  document.getElementById("department-form-title").textContent =
-    "Add Department";
-  document.getElementById("add-department-form").reset();
-
-  const modal = new bootstrap.Modal(
-    document.getElementById("addDepartmentModal"),
-  );
-  modal.show();
+document.getElementById('add-department-btn').addEventListener('click', () => {
+  editingDepartmentId = null;
+  document.getElementById('department-form-title').textContent = 'Add Department';
+  document.getElementById('add-department-form').reset();
+  new bootstrap.Modal(document.getElementById('addDepartmentModal')).show();
 });
 
-// Add/Edit Department Form Submit
-document
-  .getElementById("add-department-form")
-  .addEventListener("submit", (event) => {
-    event.preventDefault();
+document.getElementById('add-department-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
 
-    const deptName = document.getElementById("dept-name").value.trim();
-    const deptDescription = document
-      .getElementById("dept-description")
-      .value.trim();
+  const name = document.getElementById('dept-name').value.trim();
+  const description = document.getElementById('dept-description').value.trim();
 
-    if (!deptName || !deptDescription) {
-      showToast("Please fill in all fields!", "error");
-      return;
-    }
-
-    if (editingDepartmentIndex !== null) {
-      // Editing existing department
-      window.db.departments[editingDepartmentIndex].name = deptName;
-      window.db.departments[editingDepartmentIndex].description =
-        deptDescription;
-      editingDepartmentIndex = null;
-      showToast("Department updated successfully!", "success");
-    } else {
-      const nameExists = window.db.departments.find(
-        (dept) => dept.name.toLowerCase() === deptName.toLowerCase(),
-      );
-      if (nameExists) {
-        showToast("Department name already exists!", "error");
-        return;
-      }
-
-      const newId =
-        window.db.departments.length > 0
-          ? Math.max(...window.db.departments.map((d) => d.id)) + 1
-          : 1;
-
-      const newDepartment = {
-        id: newId,
-        name: deptName,
-        description: deptDescription,
-      };
-
-      window.db.departments.push(newDepartment);
-      showToast("Department added successfully!", "success");
-    }
-
-    saveToStorage();
-    renderDepartmentsList();
-
-    // Close modal
-    const modal = bootstrap.Modal.getInstance(
-      document.getElementById("addDepartmentModal"),
-    );
-    modal.hide();
-  });
-
-// Edit Department
-function editDepartment(index) {
-  editingDepartmentIndex = index;
-  const dept = window.db.departments[index];
-
-  // Pre-fill form
-  document.getElementById("dept-name").value = dept.name;
-  document.getElementById("dept-description").value = dept.description;
-
-  document.getElementById("department-form-title").textContent =
-    "Edit Department";
-
-  const modal = new bootstrap.Modal(
-    document.getElementById("addDepartmentModal"),
-  );
-  modal.show();
-}
-
-// Delete Department
-function deleteDepartment(index) {
-  const dept = window.db.departments[index];
-
-  const hasEmployees = window.db.employees.some(
-    (emp) => emp.departmentId === dept.id,
-  );
-  if (hasEmployees) {
-    showToast("Cannot delete department with existing employees!", "error");
+  if (!name || !description) {
+    showToast('Please fill in all fields!', 'error');
     return;
   }
 
-  if (confirm(`Are you sure you want to delete ${dept.name}?`)) {
-    window.db.departments.splice(index, 1);
-    saveToStorage();
-    renderDepartmentsList();
-    showToast("Department deleted successfully!", "success");
-  }
-}
+  const isEdit = editingDepartmentId !== null;
+  const { ok, data } = await apiFetch(
+    isEdit ? `/api/departments/${editingDepartmentId}` : '/api/departments',
+    { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify({ name, description }) }
+  );
 
-// Employees
-let editingEmployeeIndex = null;
-
-// Render Employees Table
-function renderEmployeesTable() {
-  const tableBody = document.getElementById("empBodyTable");
-  const emptyRow = document.getElementById("emptyEmp");
-
-  tableBody.innerHTML = "";
-
-  if (window.db.employees.length === 0) {
-    tableBody.innerHTML =
-      '<tr id="emptyEmp"><td colspan="5" class="text-center">No employees</td></tr>';
+  if (!ok) {
+    showToast(data.error || 'Operation failed', 'error');
     return;
   }
 
-  window.db.employees.forEach((employee, index) => {
-    // Find department name
-    const dept = window.db.departments.find(
-      (d) => d.id === employee.departmentId,
-    );
-    const deptName = dept ? dept.name : "N/A";
+  showToast(isEdit ? 'Department updated successfully!' : 'Department added successfully!', 'success');
+  editingDepartmentId = null;
+  bootstrap.Modal.getInstance(document.getElementById('addDepartmentModal')).hide();
+  renderDepartmentsList();
+});
 
-    const row = document.createElement("tr");
+async function editDepartment(id) {
+  const { ok, data } = await apiFetch('/api/departments');
+  if (!ok) return;
 
+  const dept = data.find(d => d.id === id);
+  if (!dept) return;
+
+  editingDepartmentId = id;
+  document.getElementById('dept-name').value = dept.name;
+  document.getElementById('dept-description').value = dept.description;
+  document.getElementById('department-form-title').textContent = 'Edit Department';
+  new bootstrap.Modal(document.getElementById('addDepartmentModal')).show();
+}
+
+async function deleteDepartment(id) {
+  const { ok: listOk, data: depts } = await apiFetch('/api/departments');
+  if (!listOk) return;
+
+  const dept = depts.find(d => d.id === id);
+  if (!dept) return;
+
+  if (!confirm(`Are you sure you want to delete ${dept.name}?`)) return;
+
+  const { ok, data } = await apiFetch(`/api/departments/${id}`, { method: 'DELETE' });
+  showToast(ok ? 'Department deleted successfully!' : (data.error || 'Delete failed'), ok ? 'success' : 'error');
+  if (ok) renderDepartmentsList();
+}
+
+// =====================
+// Employees (Admin)
+// =====================
+
+let editingEmployeeId = null;
+
+async function renderEmployeesTable() {
+  const tableBody = document.getElementById('empBodyTable');
+  const [empRes, deptRes] = await Promise.all([
+    apiFetch('/api/employees'),
+    apiFetch('/api/departments'),
+  ]);
+
+  if (!empRes.ok) {
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load employees</td></tr>';
+    return;
+  }
+
+  if (empRes.data.length === 0) {
+    tableBody.innerHTML = '<tr id="emptyEmp"><td colspan="5" class="text-center">No employees</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = '';
+  empRes.data.forEach(employee => {
+    const dept = deptRes.ok ? deptRes.data.find(d => d.id === employee.departmentId) : null;
+    const deptName = dept ? dept.name : 'N/A';
+
+    const row = document.createElement('tr');
     row.innerHTML = `
       <td>${employee.employeeId}</td>
       <td>${employee.userEmail}</td>
       <td>${employee.position}</td>
       <td>${deptName}</td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="editEmployee(${index})">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteEmployee(${index})">Delete</button>
+        <button class="btn btn-sm btn-primary" onclick="editEmployee('${employee.employeeId}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteEmployee('${employee.employeeId}')">Delete</button>
       </td>
     `;
-
     tableBody.appendChild(row);
   });
 }
 
-// Populate Department Dropdown
-function populateDepartmentDropdown() {
-  const deptSelect = document.getElementById("empDepartment");
-  deptSelect.innerHTML = "";
+async function populateDepartmentDropdown() {
+  const deptSelect = document.getElementById('empDepartment');
+  deptSelect.innerHTML = '';
 
-  window.db.departments.forEach((dept) => {
-    const option = document.createElement("option");
+  const { ok, data } = await apiFetch('/api/departments');
+  if (!ok) return;
+
+  data.forEach(dept => {
+    const option = document.createElement('option');
     option.value = dept.id;
     option.textContent = dept.name;
     deptSelect.appendChild(option);
   });
 }
 
-// Show Add Employee Form
-document.getElementById("addEmpBtn").addEventListener("click", () => {
-  editingEmployeeIndex = null;
-  document.getElementById("empFormCard").classList.remove("d-none");
-  document.getElementById("empFormTitle").textContent = "Add Employee";
-  document.getElementById("addEmp-form").reset();
-  populateDepartmentDropdown();
+document.getElementById('addEmpBtn').addEventListener('click', async () => {
+  editingEmployeeId = null;
+  document.getElementById('empFormCard').classList.remove('d-none');
+  document.getElementById('empFormTitle').textContent = 'Add Employee';
+  document.getElementById('addEmp-form').reset();
+  await populateDepartmentDropdown();
 });
 
-// Cancel Button
-document.getElementById("empCancelBtn").addEventListener("click", () => {
-  document.getElementById("empFormCard").classList.add("d-none");
-  document.getElementById("addEmp-form").reset();
-  editingEmployeeIndex = null;
+document.getElementById('empCancelBtn').addEventListener('click', () => {
+  document.getElementById('empFormCard').classList.add('d-none');
+  document.getElementById('addEmp-form').reset();
+  editingEmployeeId = null;
 });
 
-// Add/Edit Employee Form Submit
-document.getElementById("addEmp-form").addEventListener("submit", (event) => {
+document.getElementById('addEmp-form').addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const employeeData = {
-    employeeId: document.getElementById("empId").value.trim(),
-    userEmail: document.getElementById("empEmail").value.trim(),
-    position: document.getElementById("empPosition").value.trim(),
-    departmentId: parseInt(document.getElementById("empDepartment").value),
-    hireDate: document.getElementById("empHireDate").value,
+    employeeId: document.getElementById('empId').value.trim(),
+    userEmail: document.getElementById('empEmail').value.trim(),
+    position: document.getElementById('empPosition').value.trim(),
+    departmentId: parseInt(document.getElementById('empDepartment').value),
+    hireDate: document.getElementById('empHireDate').value,
   };
 
-  const accountExists = window.db.accounts.find(
-    (acc) => acc.email === employeeData.userEmail,
+  const isEdit = editingEmployeeId !== null;
+  const { ok, data } = await apiFetch(
+    isEdit ? `/api/employees/${editingEmployeeId}` : '/api/employees',
+    { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(employeeData) }
   );
-  if (!accountExists) {
-    showToast("User email must match an existing account!", "error");
+
+  if (!ok) {
+    showToast(data.error || 'Operation failed', 'error');
     return;
   }
 
-  if (editingEmployeeIndex !== null) {
-    window.db.employees[editingEmployeeIndex] = employeeData;
-    editingEmployeeIndex = null;
-  } else {
-    const idExists = window.db.employees.find(
-      (emp) => emp.employeeId === employeeData.employeeId,
-    );
-    if (idExists) {
-      showToast("Employee ID already exists!", "error");
-      return;
-    }
-
-    window.db.employees.push(employeeData);
-  }
-
-  saveToStorage();
+  showToast('Employee saved successfully!', 'success');
+  document.getElementById('empFormCard').classList.add('d-none');
+  document.getElementById('addEmp-form').reset();
+  editingEmployeeId = null;
   renderEmployeesTable();
-
-  // Hide form and reset
-  document.getElementById("empFormCard").classList.add("d-none");
-  document.getElementById("addEmp-form").reset();
-
-  showToast("Employee saved successfully!", "success");
 });
 
-// Edit Employee
-function editEmployee(index) {
-  editingEmployeeIndex = index;
-  const employee = window.db.employees[index];
+async function editEmployee(employeeId) {
+  const { ok, data } = await apiFetch('/api/employees');
+  if (!ok) return;
 
-  // Populate department dropdown first
-  populateDepartmentDropdown();
+  const employee = data.find(e => e.employeeId === employeeId);
+  if (!employee) return;
 
-  // Pre-fill form
-  document.getElementById("empId").value = employee.employeeId;
-  document.getElementById("empEmail").value = employee.userEmail;
-  document.getElementById("empPosition").value = employee.position;
-  document.getElementById("empDepartment").value = employee.departmentId;
-  document.getElementById("empHireDate").value = employee.hireDate;
+  editingEmployeeId = employeeId;
+  await populateDepartmentDropdown();
 
-  // Change form title and show form
-  document.getElementById("empFormTitle").textContent = "Edit Employee";
-  document.getElementById("empFormCard").classList.remove("d-none");
+  document.getElementById('empId').value = employee.employeeId;
+  document.getElementById('empEmail').value = employee.userEmail;
+  document.getElementById('empPosition').value = employee.position;
+  document.getElementById('empDepartment').value = employee.departmentId;
+  document.getElementById('empHireDate').value = employee.hireDate;
+
+  document.getElementById('empFormTitle').textContent = 'Edit Employee';
+  document.getElementById('empFormCard').classList.remove('d-none');
 }
 
-// Delete Employee
-function deleteEmployee(index) {
-  const employee = window.db.employees[index];
+async function deleteEmployee(employeeId) {
+  if (!confirm(`Are you sure you want to delete employee ${employeeId}?`)) return;
 
-  if (
-    confirm(`Are you sure you want to delete employee ${employee.employeeId}?`)
-  ) {
-    window.db.employees.splice(index, 1);
-    saveToStorage();
-    renderEmployeesTable();
-    showToast("Employee deleted successfully!", "success");
-  }
+  const { ok, data } = await apiFetch(`/api/employees/${employeeId}`, { method: 'DELETE' });
+  showToast(ok ? 'Employee deleted successfully!' : (data.error || 'Delete failed'), ok ? 'success' : 'error');
+  if (ok) renderEmployeesTable();
 }
 
 // =============
 // User Requests
 // =============
 
-// Render Requests Table
-function renderRequestsTable() {
-  const tableBody = document.getElementById("requestsTableBody");
+async function renderRequestsTable() {
+  const tableBody = document.getElementById('requestsTableBody');
+  const { ok, data } = await apiFetch('/api/requests');
 
-  // Filter requests for current user
-  const userRequests = window.db.requests.filter(
-    (req) => req.employeeEmail === currentUser.email,
-  );
-
-  // Check if there are requests
-  if (userRequests.length === 0) {
-    tableBody.innerHTML =
-      '<tr><td colspan="2" class="text-center">You have no requests yet.</td></tr>';
+  if (!ok) {
+    tableBody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Failed to load requests</td></tr>';
     return;
   }
 
-  // Clear and render requests
-  tableBody.innerHTML = "";
+  if (data.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="2" class="text-center">You have no requests yet.</td></tr>';
+    return;
+  }
 
-  userRequests.forEach((request) => {
-    // Format items for display
-    const itemsList = request.items
-      .map((item) => `${item.name} (${item.qty})`)
-      .join(", ");
-
-    const row = document.createElement("tr");
-
+  tableBody.innerHTML = '';
+  data.forEach(request => {
+    const itemsList = request.items.map(item => `${item.name} (${item.qty})`).join(', ');
+    const row = document.createElement('tr');
     row.innerHTML = `
       <td>${request.type}</td>
       <td>${itemsList}</td>
     `;
-
     tableBody.appendChild(row);
   });
 }
 
-// Add/Remove Items
-document.getElementById("itemsContainer").addEventListener("click", (e) => {
-  // Add item button
-  if (e.target.closest(".add-item-btn")) {
-    const container = document.getElementById("itemsContainer");
-
-    // Create new item row with X button
-    const newRow = document.createElement("div");
-    newRow.className = "input-group mb-2 item-row";
+// Add/Remove Items in request form
+document.getElementById('itemsContainer').addEventListener('click', (e) => {
+  if (e.target.closest('.add-item-btn')) {
+    const container = document.getElementById('itemsContainer');
+    const newRow = document.createElement('div');
+    newRow.className = 'input-group mb-2 item-row';
     newRow.innerHTML = `
-      <input
-        type="text"
-        class="form-control item-name"
-        placeholder="Item Name"
-        required
-      />
-      <input
-        type="number"
-        class="form-control item-qty"
-        style="max-width: 100px"
-        placeholder="Qty"
-        value="1"
-        min="1"
-        required
-      />
-      <button
-        type="button"
-        class="btn btn-outline-danger remove-item-btn"
-      >
+      <input type="text" class="form-control item-name" placeholder="Item Name" required />
+      <input type="number" class="form-control item-qty" style="max-width: 100px" placeholder="Qty" value="1" min="1" required />
+      <button type="button" class="btn btn-outline-danger remove-item-btn">
         <i class="bi bi-x"></i>
       </button>
     `;
-
     container.appendChild(newRow);
   }
 
-  // Remove item button
-  if (e.target.closest(".remove-item-btn")) {
-    const row = e.target.closest(".item-row");
-    row.remove();
+  if (e.target.closest('.remove-item-btn')) {
+    e.target.closest('.item-row').remove();
   }
 });
 
-// Submit Request Form
-document.getElementById("reqModal-form").addEventListener("submit", (event) => {
+document.getElementById('reqModal-form').addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const requestType = document.getElementById("requestType").value.trim();
-
-  if (!requestType) {
-    showToast("Please enter a request type!", "warning");
+  const type = document.getElementById('requestType').value.trim();
+  if (!type) {
+    showToast('Please enter a request type!', 'warning');
     return;
   }
 
-  const itemRows = document.querySelectorAll(".item-row");
   const items = [];
-
-  itemRows.forEach((row) => {
-    const name = row.querySelector(".item-name").value.trim();
-    const qty = parseInt(row.querySelector(".item-qty").value);
-
-    if (name && qty > 0) {
-      items.push({ name, qty });
-    }
+  document.querySelectorAll('.item-row').forEach(row => {
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-qty').value);
+    if (name && qty > 0) items.push({ name, qty });
   });
 
   if (items.length === 0) {
-    showToast("Please add at least one item!", "warning");
+    showToast('Please add at least one item!', 'warning');
     return;
   }
 
-  const newRequest = {
-    type: requestType,
-    items: items,
-    status: "Pending",
-    date: new Date().toISOString().split("T")[0], // YYYY-MM-DD format
-    employeeEmail: currentUser.email,
-  };
+  const { ok, data } = await apiFetch('/api/requests', {
+    method: 'POST',
+    body: JSON.stringify({ type, items }),
+  });
 
-  // Save to database
-  window.db.requests.push(newRequest);
-  saveToStorage();
+  if (!ok) {
+    showToast(data.error || 'Submission failed', 'error');
+    return;
+  }
 
-  // Re-render table
   renderRequestsTable();
+  document.getElementById('reqModal-form').reset();
 
-  // Reset form and close modal
-  document.getElementById("reqModal-form").reset();
-
-  // Reset items container to single row
-  const itemsContainer = document.getElementById("itemsContainer");
-  itemsContainer.innerHTML = `
+  document.getElementById('itemsContainer').innerHTML = `
     <div class="input-group mb-2 item-row">
-      <input
-        type="text"
-        class="form-control item-name"
-        placeholder="Item Name"
-        required
-      />
-      <input
-        type="number"
-        class="form-control item-qty"
-        style="max-width: 100px"
-        placeholder="Qty"
-        value="1"
-        min="1"
-        required
-      />
-      <button
-        type="button"
-        class="btn btn-outline-secondary add-item-btn"
-      >
+      <input type="text" class="form-control item-name" placeholder="Item Name" required />
+      <input type="number" class="form-control item-qty" style="max-width: 100px" placeholder="Qty" value="1" min="1" required />
+      <button type="button" class="btn btn-outline-secondary add-item-btn">
         <i class="bi bi-plus"></i>
       </button>
     </div>
   `;
 
-  // Close modal
-  const modal = bootstrap.Modal.getInstance(
-    document.getElementById("requestModal"),
-  );
-  modal.hide();
-
-  showToast("Request submitted successfully!", "success");
+  bootstrap.Modal.getInstance(document.getElementById('requestModal')).hide();
+  showToast('Request submitted successfully!', 'success');
 });
 
+// ======================
 // Toast Notifications
-function showToast(message, type = "info") {
-  const toastEl = document.getElementById("liveToast");
-  const toastMessage = document.getElementById("toast-message");
+// ======================
 
-  // Set background color based on type
-  let bgClass = "bg-primary";
+function showToast(message, type = 'info') {
+  const toastEl = document.getElementById('liveToast');
+  const toastMessage = document.getElementById('toast-message');
 
-  switch (type) {
-    case "success":
-      bgClass = "bg-success";
-      break;
-    case "error":
-    case "danger":
-      bgClass = "bg-danger";
-      break;
-    case "warning":
-      bgClass = "bg-warning";
-      break;
-    case "info":
-      bgClass = "bg-info";
-      break;
-  }
+  const bgMap = { success: 'bg-success', error: 'bg-danger', danger: 'bg-danger', warning: 'bg-warning', info: 'bg-info' };
+  const bgClass = bgMap[type] || 'bg-primary';
 
   toastMessage.textContent = message;
+  toastEl.className = 'toast align-items-center text-white border-0 ' + bgClass;
 
-  // Apply background color (text is white by default)
-  toastEl.className = "toast align-items-center text-white border-0 " + bgClass;
-
-  // Show toast
-  const toast = new bootstrap.Toast(toastEl, {
-    autohide: true,
-    delay: 3000,
-  });
-  toast.show();
+  new bootstrap.Toast(toastEl, { autohide: true, delay: 3000 }).show();
 }
