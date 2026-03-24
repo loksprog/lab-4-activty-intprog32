@@ -288,12 +288,14 @@ document.getElementById('addAccBtn').addEventListener('click', () => {
   editingAccountId = null;
   document.getElementById('account-form-title').textContent = 'Add Account';
   addAccForm.reset();
+  document.getElementById('accPassword').required = true;
   accountFormCard.classList.remove('d-none');
 });
 
 document.getElementById('accCancelBtn').addEventListener('click', () => {
   accountFormCard.classList.add('d-none');
   addAccForm.reset();
+  document.getElementById('accPassword').required = true;
   editingAccountId = null;
 });
 
@@ -341,6 +343,7 @@ async function editAccount(id) {
   document.getElementById('accLastName').value = account.lastName;
   document.getElementById('accEmail').value = account.email;
   document.getElementById('accPassword').value = '';
+  document.getElementById('accPassword').required = false;
   document.getElementById('accRole').value = account.role;
   document.getElementById('verifiedCheck').checked = account.verified;
 
@@ -527,7 +530,7 @@ async function renderEmployeesTable() {
   }
 
   if (empRes.data.length === 0) {
-    tableBody.innerHTML = '<tr id="emptyEmp"><td colspan="5" class="text-center">No employees</td></tr>';
+    tableBody.innerHTML = '<tr id="emptyEmp"><td colspan="6" class="text-center">No employees</td></tr>';
     return;
   }
 
@@ -542,6 +545,7 @@ async function renderEmployeesTable() {
       <td>${employee.userEmail}</td>
       <td>${employee.position}</td>
       <td>${deptName}</td>
+      <td>${employee.hireDate}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="editEmployee('${employee.employeeId}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteEmployee('${employee.employeeId}')">Delete</button>
@@ -651,7 +655,7 @@ async function renderRequestsTable() {
   }
 
   if (data.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="2" class="text-center">You have no requests yet.</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="4" class="text-center">You have no requests yet.</td></tr>';
     return;
   }
 
@@ -662,6 +666,8 @@ async function renderRequestsTable() {
     row.innerHTML = `
       <td>${request.type}</td>
       <td>${itemsList}</td>
+      <td>${request.date}</td>
+      <td>${request.status}</td>
     `;
     tableBody.appendChild(row);
   });
