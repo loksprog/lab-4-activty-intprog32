@@ -99,14 +99,6 @@
           <li>CRUD for Employees, Departments, Requests</li>
         </ul>
 
-        <div class="alert alert-info">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          <span>
-            <strong>Note:</strong> All data is stored in
-            <code>localStorage</code>. Refresh to reset.
-          </span>
-        </div>
-
         <button type="button" class="btn btn-primary" id="getStartedBtn">
           Get Started <span><i class="bi bi-arrow-right"></i></span>
         </button>
@@ -328,12 +320,13 @@
                 <th>User Email</th>
                 <th>Position</th>
                 <th>Dept</th>
+                <th>Hire Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="empBodyTable">
               <tr id="emptyEmp">
-                <td colspan="5" class="text-center">No employees</td>
+                <td colspan="6" class="text-center">No employees</td>
               </tr>
             </tbody>
           </table>
@@ -619,6 +612,8 @@
               <tr>
                 <th>Type</th>
                 <th>Items</th>
+                <th>Date</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody id="requestsTableBody"></tbody>
